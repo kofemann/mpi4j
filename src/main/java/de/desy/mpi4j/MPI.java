@@ -8,6 +8,8 @@ import java.lang.foreign.SymbolLookup;
 import java.lang.invoke.MethodHandle;
 import java.util.NoSuchElementException;
 import java.nio.ByteOrder;
+import java.util.Random;
+import java.util.concurrent.ThreadLocalRandom;
 
 import static java.lang.foreign.ValueLayout.*;
 
@@ -153,13 +155,13 @@ public class MPI {
     }
 
 
-    public static void mpiGather(double[] send, double[] rcv) throws MPIException {
+    public static void mpiGather(double send, double[] rcv) throws MPIException {
         try (var arena = Arena.ofConfined()) {
-            var sendBuf = arena.allocate((long) Double.BYTES * send.length);
-            sendBuf.asByteBuffer().order(ByteOrder.nativeOrder()).asDoubleBuffer().put(send);
+            var sendBuf = arena.allocate(Double.BYTES);
+            sendBuf.set(JAVA_DOUBLE, 0, send);
 
             var rcvBuf = rcv.length == 0 ? MemorySegment.NULL : arena.allocate((long) Double.BYTES * rcv.length);
-            int rc = (int) mpiGather.invokeExact(sendBuf, send.length, MPI_DOUBLE, rcvBuf, rcv.length, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+            int rc = (int) mpiGather.invokeExact(sendBuf, 1, MPI_DOUBLE, rcvBuf, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
             checkMpiError(rc);
 
             var b = rcvBuf.asByteBuffer().order(ByteOrder.nativeOrder()).asDoubleBuffer();
@@ -199,7 +201,7 @@ public class MPI {
             out = new double[size];
         }
 
-        mpiGather(new double[] {1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0}, out);
+        mpiGather(ThreadLocalRandom.current().nextDouble(), out);
         mpiBarrier();
         if (myRank == 0) {
             for (int i = 0; i < out.length; i++) {
