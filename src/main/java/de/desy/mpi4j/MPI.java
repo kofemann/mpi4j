@@ -11,7 +11,6 @@ import java.nio.ByteOrder;
 
 import static java.lang.foreign.ValueLayout.*;
 
-
 public class MPI {
 
     private static final Linker LINKER = Linker.nativeLinker();
@@ -24,11 +23,16 @@ public class MPI {
     private static final MethodHandle mpiCommSize;
     private static final MethodHandle mpiErrorString;
     private static final MethodHandle mpiFinalize;
+    private static final MethodHandle mpiGather;
+    private static final MethodHandle mpiBarrier;
+
+    private static final MemorySegment MPI_DOUBLE;
     private static final MemorySegment MPI_COMM_WORLD;
 
     static {
 
         MPI_COMM_WORLD = MPILIB.find("ompi_mpi_comm_world").orElseThrow(() -> new NoSuchElementException("MPI_COMM_WORLD"));
+        MPI_DOUBLE = MPILIB.find("ompi_mpi_double").orElseThrow(() -> new NoSuchElementException("MPI_DOUBLE"));
 
         mpiInit = LINKER.downcallHandle(
                 MPILIB.find("MPI_Init").orElseThrow(() -> new NoSuchElementException("MPI_Init")),
@@ -55,6 +59,16 @@ public class MPI {
                 FunctionDescriptor.of(JAVA_INT)
         );
 
+        mpiGather = LINKER.downcallHandle(
+                MPILIB.find("MPI_Gather").orElseThrow(() -> new NoSuchElementException("MPI_Gather")),
+                FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_INT, ADDRESS, ADDRESS, JAVA_INT, ADDRESS, JAVA_INT, ADDRESS)
+        );
+
+        mpiBarrier = LINKER.downcallHandle(
+                MPILIB.find("MPI_Barrier").orElseThrow(() -> new NoSuchElementException("MPI_Barrier")),
+                FunctionDescriptor.of(JAVA_INT, ADDRESS)
+        );
+
     }
 
     private MPI() {
@@ -62,7 +76,6 @@ public class MPI {
     }
 
     public static void mpiInit(String[] args) throws MPIException {
-        int rc;
         try (var arena = Arena.ofConfined()) {
             MemorySegment argc = arena.allocate(Integer.BYTES);
             argc.set(JAVA_INT, 0, args.length);
@@ -72,11 +85,13 @@ public class MPI {
                 MemorySegment arg = arena.allocateFrom(args[i]);
                 argv.set(ADDRESS, i * ADDRESS.byteSize(), arg);
             }
-            rc = (int) mpiInit.invokeExact(argc, argv);
-        } catch (Throwable t) {
-            throw new RuntimeException(t);
+            int rc = (int) mpiInit.invokeExact(argc, argv);
+            checkMpiError(rc);
+        } catch (MPIException e) {
+            throw e;
+        } catch (Throwable e) {
+            throw new RuntimeException(e);
         }
-        checkMpiError(rc);
     }
 
     public static void checkMpiError(int status) throws MPIException {
@@ -100,42 +115,74 @@ public class MPI {
     }
 
     public static int mpiCommRank() throws MPIException {
-        int rc;
-        int r;
         try (var arena = Arena.ofConfined()) {
             MemorySegment rank = arena.allocate(Integer.BYTES);
-            rc = (int) mpiCommRank.invokeExact(MPI_COMM_WORLD, rank);
-            r = rank.asByteBuffer().order(ByteOrder.nativeOrder()).getInt();
+            int rc = (int) mpiCommRank.invokeExact(MPI_COMM_WORLD, rank);
+            checkMpiError(rc);
+            return rank.asByteBuffer().order(ByteOrder.nativeOrder()).getInt();
+        } catch (MPIException e) {
+            throw e;
         } catch (Throwable e) {
             throw new RuntimeException(e);
         }
-        checkMpiError(rc);
-        return r;
     }
 
 
     public static int mpiCommSize() throws MPIException {
-        int rc;
-        int s;
         try (var arena = Arena.ofConfined()) {
             MemorySegment size = arena.allocate(Integer.BYTES);
-            rc = (int) mpiCommSize.invokeExact(MPI_COMM_WORLD, size);
-            s = size.asByteBuffer().order(ByteOrder.nativeOrder()).getInt();
+            int rc = (int) mpiCommSize.invokeExact(MPI_COMM_WORLD, size);
+            checkMpiError(rc);
+            return size.asByteBuffer().order(ByteOrder.nativeOrder()).getInt();
+        } catch (MPIException e) {
+            throw e;
         } catch (Throwable e) {
             throw new RuntimeException(e);
         }
-        checkMpiError(rc);
-        return s;
     }
 
     public static void mpiFinalize() throws MPIException {
-        int rc;
         try {
-            rc = (int) mpiFinalize.invokeExact();
+            int rc = (int) mpiFinalize.invokeExact();
+            checkMpiError(rc);
+        } catch (MPIException e) {
+            throw e;
         } catch (Throwable e) {
             throw new RuntimeException(e);
         }
-        checkMpiError(rc);
+    }
+
+
+    public static void mpiGather(double[] send, double[] rcv) throws MPIException {
+        try (var arena = Arena.ofConfined()) {
+            var sendBuf = arena.allocate((long) Double.BYTES * send.length);
+            sendBuf.asByteBuffer().order(ByteOrder.nativeOrder()).asDoubleBuffer().put(send);
+
+            var rcvBuf = rcv.length == 0 ? MemorySegment.NULL : arena.allocate((long) Double.BYTES * rcv.length);
+            int rc = (int) mpiGather.invokeExact(sendBuf, send.length, MPI_DOUBLE, rcvBuf, rcv.length, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+            checkMpiError(rc);
+
+            var b = rcvBuf.asByteBuffer().order(ByteOrder.nativeOrder()).asDoubleBuffer();
+            for (int i = 0; i < b.capacity(); i++) {
+                rcv[i] = b.get(i);
+            }
+
+        } catch (MPIException e) {
+            throw e;
+        } catch (Throwable e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public static void mpiBarrier() throws MPIException {
+        try {
+            int rc = (int) mpiBarrier.invokeExact(MPI_COMM_WORLD);
+            checkMpiError(rc);
+        } catch (MPIException e) {
+            throw e;
+        } catch (Throwable e) {
+            throw new RuntimeException(e);
+        }
     }
 
     public static void main(String[] args) throws Throwable {
@@ -144,10 +191,22 @@ public class MPI {
 
         MPI.mpiInit(args);
 
-        System.out.println("size: " + mpiCommSize());
-        System.out.println("rank: " + mpiCommRank());
-        mpiFinalize();
+        int myRank = mpiCommRank();
+        int size = mpiCommSize();
+        double[] out = new double[0];
+        if (myRank == 0) {
+            System.out.println("size: " + size);
+            out = new double[size];
+        }
 
+        mpiGather(new double[] {1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0}, out);
+        mpiBarrier();
+        if (myRank == 0) {
+            for (int i = 0; i < out.length; i++) {
+                System.out.println("out[" + i + "] = " + out[i]);
+            }
+        }
+        mpiFinalize();
     }
 
 }
