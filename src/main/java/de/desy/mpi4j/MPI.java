@@ -15,7 +15,7 @@ import java.nio.ByteOrder;
 import static java.lang.foreign.ValueLayout.*;
 
 
-public class Mpi {
+public class MPI {
 
   private static final Linker LINKER = Linker.nativeLinker();
   private static final SymbolLookup MPILIB = SymbolLookup.libraryLookup("libmpi.so", Arena.global());
