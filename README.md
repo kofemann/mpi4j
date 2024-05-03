@@ -48,6 +48,17 @@ $JAVA_HOME/bin/java --enable-native-access=ALL-UNNAMED -cp ... App
 This project is a proof of concept and not expected to be used (at least now) for real application.
 Nevertheless, pull-requests are welcome!
 
+## Usage with JDK 9 module system
+
+With the provided stable automatic module name __de.desy.mpi4j__, **mpi4j**
+can be used in modular java9 application:
+
+```java
+module com.foo.bar {
+    requires de.desy.mpi4j;
+}
+```
+
 ## How to contribute
 
 **MPI4J** uses the linux kernel model where git is not only source repository,
