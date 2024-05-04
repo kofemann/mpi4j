@@ -11,7 +11,8 @@ Java FFI based binding for MPI
 The `MPI4J` uses Java's [Foreign Function Inferface][1]. To run access it the application must be started with a corresponding command line options:
 
 ```
-$JAVA_HOME/bin/java --enable-native-access=ALL-UNNAMED -cp ... App
+$ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib64/openmpi/lib
+$ $JAVA_HOME/bin/java --enable-native-access=ALL-UNNAMED -cp ... App
 ```
 
 ## Example
