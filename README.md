@@ -19,27 +19,27 @@ $JAVA_HOME/bin/java --enable-native-access=ALL-UNNAMED -cp ... App
 ```java
     public static void main(String[] args) throws Throwable {
 
-        System.out.println("=== MPI4J ===");
+    System.out.println("=== MPI4J ===");
 
-        MPI.mpiInit(args);
+    MPI.mpiInit(args);
 
-        int myRank = mpiCommRank();
-        int size = mpiCommSize();
-        double[] out = new double[0];
-        if (myRank == 0) {
-            System.out.println("size: " + size);
-            out = new double[size];
-        }
-
-        mpiGather(ThreadLocalRandom.current().nextDouble(), out);
-        mpiBarrier();
-        if (myRank == 0) {
-            for (int i = 0; i < out.length; i++) {
-                System.out.println("out[" + i + "] = " + out[i]);
-            }
-        }
-        mpiFinalize();
+    int myRank = MPI.world().mpiCommRank();
+    int size = MPI.world().mpiCommSize();
+    double[] out = new double[0];
+    if (myRank == 0) {
+        System.out.println("size: " + size);
+        out = new double[size];
     }
+
+    MPI.world().mpiGather(ThreadLocalRandom.current().nextDouble(), out);
+    MPI.world().mpiBarrier();
+    if (myRank == 0) {
+        for (int i = 0; i < out.length; i++) {
+            System.out.println("out[" + i + "] = " + out[i]);
+        }
+    }
+    mpiFinalize();
+}
 ```
 
 

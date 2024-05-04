@@ -29,11 +29,22 @@ public class MPI {
     private static final MethodHandle mpiBarrier;
 
     private static final MemorySegment MPI_DOUBLE;
+
+    /**
+     * MPI Communicator to all processes.
+     */
     private static final MemorySegment MPI_COMM_WORLD;
+
+    /**
+     * MPI Communicator to calling process only.
+     */
+    private static final MemorySegment MPI_COMM_SELF;
 
     static {
 
         MPI_COMM_WORLD = MPILIB.find("ompi_mpi_comm_world").orElseThrow(() -> new NoSuchElementException("MPI_COMM_WORLD"));
+        MPI_COMM_SELF = MPILIB.find("ompi_mpi_comm_self").orElseThrow(() -> new NoSuchElementException("MPI_COMM_SELF"));
+
         MPI_DOUBLE = MPILIB.find("ompi_mpi_double").orElseThrow(() -> new NoSuchElementException("MPI_DOUBLE"));
 
         mpiInit = LINKER.downcallHandle(
@@ -73,8 +84,23 @@ public class MPI {
 
     }
 
-    private MPI() {
-        // utility class
+
+    /**
+     * MPI Communicator.
+     */
+    private final MemorySegment comm;
+
+
+    private MPI(MemorySegment comm) {
+        this.comm = comm;
+    }
+
+    public static MPI world() {
+        return new MPI(MPI_COMM_WORLD);
+    }
+
+    public static MPI self() {
+        return new MPI(MPI_COMM_SELF);
     }
 
     public static void mpiInit(String[] args) throws MPIException {
@@ -96,7 +122,7 @@ public class MPI {
         }
     }
 
-    public static void checkMpiError(int status) throws MPIException {
+    private static void checkMpiError(int status) throws MPIException {
         if (status != 0) {
 
             int rc;
@@ -116,10 +142,10 @@ public class MPI {
         }
     }
 
-    public static int mpiCommRank() throws MPIException {
+    public int mpiCommRank() throws MPIException {
         try (var arena = Arena.ofConfined()) {
             MemorySegment rank = arena.allocate(Integer.BYTES);
-            int rc = (int) mpiCommRank.invokeExact(MPI_COMM_WORLD, rank);
+            int rc = (int) mpiCommRank.invokeExact(comm, rank);
             checkMpiError(rc);
             return rank.asByteBuffer().order(ByteOrder.nativeOrder()).getInt();
         } catch (MPIException e) {
@@ -130,10 +156,10 @@ public class MPI {
     }
 
 
-    public static int mpiCommSize() throws MPIException {
+    public int mpiCommSize() throws MPIException {
         try (var arena = Arena.ofConfined()) {
             MemorySegment size = arena.allocate(Integer.BYTES);
-            int rc = (int) mpiCommSize.invokeExact(MPI_COMM_WORLD, size);
+            int rc = (int) mpiCommSize.invokeExact(comm, size);
             checkMpiError(rc);
             return size.asByteBuffer().order(ByteOrder.nativeOrder()).getInt();
         } catch (MPIException e) {
@@ -154,14 +180,13 @@ public class MPI {
         }
     }
 
-
-    public static void mpiGather(double send, double[] rcv) throws MPIException {
+    public void mpiGather(double send, double[] rcv) throws MPIException {
         try (var arena = Arena.ofConfined()) {
             var sendBuf = arena.allocate(Double.BYTES);
             sendBuf.set(JAVA_DOUBLE, 0, send);
 
             var rcvBuf = rcv.length == 0 ? MemorySegment.NULL : arena.allocate((long) Double.BYTES * rcv.length);
-            int rc = (int) mpiGather.invokeExact(sendBuf, 1, MPI_DOUBLE, rcvBuf, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+            int rc = (int) mpiGather.invokeExact(sendBuf, 1, MPI_DOUBLE, rcvBuf, 1, MPI_DOUBLE, 0, comm);
             checkMpiError(rc);
 
             var b = rcvBuf.asByteBuffer().order(ByteOrder.nativeOrder()).asDoubleBuffer();
@@ -176,9 +201,9 @@ public class MPI {
         }
     }
 
-    public static void mpiBarrier() throws MPIException {
+    public void mpiBarrier() throws MPIException {
         try {
-            int rc = (int) mpiBarrier.invokeExact(MPI_COMM_WORLD);
+            int rc = (int) mpiBarrier.invokeExact(comm);
             checkMpiError(rc);
         } catch (MPIException e) {
             throw e;
@@ -193,16 +218,16 @@ public class MPI {
 
         MPI.mpiInit(args);
 
-        int myRank = mpiCommRank();
-        int size = mpiCommSize();
+        int myRank = MPI.world().mpiCommRank();
+        int size = MPI.world().mpiCommSize();
         double[] out = new double[0];
         if (myRank == 0) {
             System.out.println("size: " + size);
             out = new double[size];
         }
 
-        mpiGather(ThreadLocalRandom.current().nextDouble(), out);
-        mpiBarrier();
+        MPI.world().mpiGather(ThreadLocalRandom.current().nextDouble(), out);
+        MPI.world().mpiBarrier();
         if (myRank == 0) {
             for (int i = 0; i < out.length; i++) {
                 System.out.println("out[" + i + "] = " + out[i]);
