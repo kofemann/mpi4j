@@ -38,6 +38,7 @@ public class MPI {
      */
     private static final MemorySegment MPI_COMM_SELF;
 
+    // Initialize MPI methods
     static {
 
         MPI_COMM_WORLD = MPILIB.find("ompi_mpi_comm_world").orElseThrow(() -> new NoSuchElementException("MPI_COMM_WORLD"));
@@ -187,10 +188,8 @@ public class MPI {
             int rc = (int) mpiGather.invokeExact(sendBuf, 1, MPI_DOUBLE, rcvBuf, 1, MPI_DOUBLE, 0, comm);
             checkMpiError(rc);
 
-            var b = rcvBuf.asByteBuffer().order(ByteOrder.nativeOrder()).asDoubleBuffer();
-            for (int i = 0; i < b.capacity(); i++) {
-                rcv[i] = b.get(i);
-            }
+            var b = rcvBuf.toArray(JAVA_DOUBLE);
+            System.arraycopy(b, 0, rcv, 0, b.length);
 
         } catch (MPIException e) {
             throw e;
