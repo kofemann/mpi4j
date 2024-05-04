@@ -8,8 +8,6 @@ import java.lang.foreign.SymbolLookup;
 import java.lang.invoke.MethodHandle;
 import java.util.NoSuchElementException;
 import java.nio.ByteOrder;
-import java.util.Random;
-import java.util.concurrent.ThreadLocalRandom;
 
 import static java.lang.foreign.ValueLayout.*;
 
@@ -211,29 +209,4 @@ public class MPI {
             throw new RuntimeException(e);
         }
     }
-
-    public static void main(String[] args) throws Throwable {
-
-        System.out.println("=== MPI4J ===");
-
-        MPI.mpiInit(args);
-
-        int myRank = MPI.world().mpiCommRank();
-        int size = MPI.world().mpiCommSize();
-        double[] out = new double[0];
-        if (myRank == 0) {
-            System.out.println("size: " + size);
-            out = new double[size];
-        }
-
-        MPI.world().mpiGather(ThreadLocalRandom.current().nextDouble(), out);
-        MPI.world().mpiBarrier();
-        if (myRank == 0) {
-            for (int i = 0; i < out.length; i++) {
-                System.out.println("out[" + i + "] = " + out[i]);
-            }
-        }
-        mpiFinalize();
-    }
-
 }
